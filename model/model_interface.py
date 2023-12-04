@@ -1,9 +1,14 @@
 import inspect
+from typing import Union, Optional, Callable, Any
+
 import torch
 import torch.nn as nn
 import importlib
 import torch.optim.lr_scheduler as lrs
 import pytorch_lightning as pl
+from pytorch_lightning.core.optimizer import LightningOptimizer
+from torch.optim import Optimizer
+import torchmetrics
 
 
 class MInterface(pl.LightningModule):
@@ -14,6 +19,7 @@ class MInterface(pl.LightningModule):
         self.save_hyperparameters()
         self.load_model()
         self.configure_loss()
+        self.config_metric()
 
         # self.validation_step_outputs = []  # save outputs of each batch for validation
         # self.test_step_outputs = []  # save outputs of each batch for validation
@@ -47,10 +53,6 @@ class MInterface(pl.LightningModule):
         args1.update(other_args)
         return Model(**args1)
 
-    # model forward function
-    def forward(self, img):
-        return self.model(img)
-
     # todo: define loss function
     def configure_loss(self):
         loss = self.hparams.loss.lower()
@@ -63,16 +65,50 @@ class MInterface(pl.LightningModule):
         else:
             raise ValueError(f'Optimizer {self.loss_function} has not been added to "configure_loss()"')
 
+    # todo: define your evaluation metrics, such as accuracy for classification. You can define your own metric here using TorchMetrics library here.
+    def config_metric(self):
+        metric = self.hparams.metric.lower()
+        if metric == 'accuracy':
+            self.valid_acc = torchmetrics.classification.Accuracy(task="multiclass",
+                                                                  num_classes=self.hparams.num_classes)
+            self.test_acc = torchmetrics.classification.Accuracy(task="multiclass",
+                                                                 num_classes=self.hparams.num_classes)
+        elif metric == 'recall':
+            self.valid_recall = torchmetrics.classification.Recall(task='multiclass',
+                                                                   num_classes=self.hparams.num_classes)
+            self.test_recall = torchmetrics.classification.Recall(task='multiclass',
+                                                                  num_classes=self.hparams.num_classes)
+
+    # model forward function
+    def forward(self, img):
+        return self.model(img)
+
+    # todo: configure the optimizer step, takes into account the warmup stage
+    def optimizer_step(
+            self,
+            epoch: int,
+            batch_idx: int,
+            optimizer: Union[Optimizer, LightningOptimizer],
+            optimizer_closure: Optional[Callable[[], Any]] = None,
+    ) -> None:
+        # update params
+        optimizer.step(closure=optimizer_closure)
+
+        # manually warm up lr without a scheduler
+        if self.trainer.global_step < self.hparams.warmup_steps:
+            lr_scale = min(1., float(self.trainer.global_step + 1) / self.hparams.warmup_steps)
+            for pg in optimizer.param_groups:
+                pg['lr'] = lr_scale * self.hparams.lr
+
     # todo: define the training step. This is the training step that's executed at each iteration
     def training_step(self, batch, batch_idx):
         img, labels = batch
-
         # Here we are calling the method forward that we defined above
         out = self(img)
         # Call the loss_function we defined above
         loss = self.loss_function(out, labels)
         # logger=True means that we use tensorboard save loss value
-        self.log('loss', loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log('loss', loss.item(), prog_bar=True, logger=True)
         return {'loss': loss}
 
     # todo: In the case that you need to make use of all the outputs from each training_step(), override the
@@ -89,37 +125,30 @@ class MInterface(pl.LightningModule):
         img, labels = batch
         out = self(img)
         loss = self.loss_function(out, labels)
-        out_digit = out.argmax(dim=1)
-
-        correct_num = sum(labels == out_digit).cpu().item()
 
         # record batch and epoch loss
-        self.log('val_loss', loss.item(), on_step=True, on_epoch=True, logger=True)
-        # record epoch accuracy
-        self.log('val_acc', correct_num / len(out_digit), on_epoch=True, prog_bar=True, logger=True)
+        self.log('val_loss', loss.item(), logger=True)
 
-        # self.validation_step_outputs.append((correct_num, len(out_digit)))
-        return (correct_num, len(out_digit))
+        # record step and epoch accuracy by using TorchMetrics
+        self.valid_acc(out, labels)
+
+        self.log('valid_acc', self.valid_acc, on_step=True, on_epoch=True)
 
     # todo: Called in the validation loop at the end of the epoch.
-    # def on_validation_epoch_end(self):
-    #     # calculate final accuracy of whole epoch
-    #     total_correct_num = sum([i[0] for i in self.validation_step_outputs])
-    #     total_out_digit = sum([i[1] for i in self.validation_step_outputs])
-    #     epoch_accuracy = total_correct_num / total_out_digit
-    #     self.log('epoch_val_acc', epoch_accuracy, prog_bar=True, logger=True)
+    # def on_validation_epoch_end(self, outputs):
     #
-    #     self.validation_step_outputs.clear()  # free memory
+    #     self.log('valid_acc_epoch', self.valid_acc.compute())
+    #     self.valid_acc.reset()
 
     # todo: Operates on a single batch of data from the test set.
     def test_step(self, batch, batch_idx):
         # Here we just reuse the validation_step for testing
         img, labels = batch
         out = self(img)
-        out_digit = out.argmax(dim=1)
-        correct_num = sum(labels == out_digit).cpu().item()
-        # self.test_step_outputs.append((correct_num, len(out_digit)))
-        return (correct_num, len(out_digit))
+
+        # record step and epoch accuracy by using TorchMetrics
+        self.test_acc(out, labels)
+        self.log('test_acc', self.test_acc, on_epoch=True)
 
     # # todo: Called in the test loop at the end of the epoch.
     # def on_test_epoch_end(self):

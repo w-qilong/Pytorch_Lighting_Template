@@ -63,7 +63,7 @@ class DInterface(pl.LightningDataModule):
 
         # Assign test dataset for use in dataloader(s)
         # you can put multiple dataset into a list and return list for test
-        if stage == 'test' or stage is None:
+        if stage == 'test':
             # init test datasets
             self.test_set = []
             for item in self.test_dataset:
@@ -98,7 +98,7 @@ class DInterface(pl.LightningDataModule):
 
     def test_dataloader(self):
         # if there is only one test dataset, return its DataLoader
-        if len(self.eval_set) == 1:
+        if len(self.test_set) == 1:
             return DataLoader(self.test_set[0], batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False,
                               persistent_workers=True)
         # if there are multiple test dataset, return a DataLoader list

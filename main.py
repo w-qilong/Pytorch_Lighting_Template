@@ -8,7 +8,7 @@
 
 import pytorch_lightning as pl
 from argparse import ArgumentParser
-from pytorch_lightning import Trainereee
+from pytorch_lightning import Trainer
 import pytorch_lightning.callbacks as plc
 
 from model import MInterface
@@ -26,30 +26,34 @@ def load_callbacks():
     # todo: if we use multiple validation datasets, We must specify which dataset corresponds to the indicator being monitored.
     #  Same process should be setted in plc.ModelCheckpoint.
     callbacks.append(plc.EarlyStopping(
-        monitor='val_acc_epoch/dataloader_idx_0',  # todo: change the monitor metric for your dataset
+        monitor='valid_acc_epoch/dataloader_idx_0',  # todo: change the monitor metric for your dataset
         mode='max',
-        patience=3,
+        patience=10,
         min_delta=0.0001
     ))
 
-    # monitor metric and save model as defined name
+    #  the best k models according to the quantity monitored will be saved.
     callbacks.append(plc.ModelCheckpoint(
-        monitor='val_acc_epoch/dataloader_idx_0', # todo: change the monitor metric for your dataset
-        filename='best-{epoch:02d}-{val_acc_epoch/dataloader_idx_0:.3f}', # todo: change the monitor metric for your dataset
-        save_top_k=2,
+        # todo: change the monitor metric for your dataset
+        monitor='valid_acc_epoch/dataloader_idx_0',
+        # todo: change the monitor metric for your dataset
+        filename='best_{epoch}_acc_{valid_acc_epoch/dataloader_idx_0:.4f}',
+        save_top_k=1,
         mode='max',
-        save_last=True
+        save_last=True,
+        save_weights_only=True
     ))
 
     # Generates a summary of all layers in a LightningModule
-    callbacks.append(plc.ModelSummary(
-        max_depth=1
-    ))
+    # Note:The Trainer already configured with model summary callbacks by default.
+    # callbacks.append(plc.ModelSummary(
+    #     max_depth=1
+    # ))
 
     # Automatically monitor and logs learning rate for learning rate schedulers during training.
     if args.lr_scheduler:
         callbacks.append(plc.LearningRateMonitor(
-            logging_interval='epoch'))
+            logging_interval='step'))
 
     return callbacks
 
@@ -70,15 +74,22 @@ def main(args):
         accelerator=args.accelerator,
         devices=args.devices,
         default_root_dir=f'./Logs/{args.model_name}',  # we use current model for log folder name
+        max_epochs=args.epochs,
+        callbacks=args.callbacks,  # we only run the checkpointing callback (you can add more)
+        check_val_every_n_epoch=1,  # run validation every epoch
+        log_every_n_steps=20,
+        enable_model_summary=True,
+        benchmark=True,
         num_sanity_val_steps=0,  # runs a validation step before starting training
         precision=16,  # we use half precision to reduce  memory usage
-        max_epochs=args.epochs,
-        check_val_every_n_epoch=1,  # run validation every epoch
-        callbacks=args.callbacks,  # we only run the checkpointing callback (you can add more)
-        log_every_n_steps=20,
         # fast_dev_run=True  # uncomment or dev mode (only runs a one iteration train and validation, no checkpointing).
     )
+    # train and eval model using train_dataloader and eval_dataloader
     trainer.fit(model, data_module)
+
+    # test model using defined test_dataloader, you have to set the ckpt_path
+    # trainer.test(model=model, datamodule=data_module,
+    #              ckpt_path=r'')
 
 
 if __name__ == '__main__':
@@ -92,7 +103,7 @@ if __name__ == '__main__':
     # select GPU device
     parser.add_argument('--devices', default=[0], type=list)
     # set training epochs
-    parser.add_argument('--epochs', default=10, type=int)
+    parser.add_argument('--epochs', default=5, type=int)
     # set batch size
     parser.add_argument('--batch_size', default=32, type=int)
     # set number of process worker in dataloader
@@ -109,6 +120,10 @@ if __name__ == '__main__':
     # todo: LR Scheduler. Used for dynamically adjusting learning rates
     # select lr_scheduler. We have defined multiple lr_scheduler in model_interface.py, we can select one for our study here.
     parser.add_argument('--lr_scheduler', choices=['step', 'multi_step', 'cosine'], default='multi_step', type=str)
+    # Here, we can use gradual warmup to , i.e., start with an initially small learning rate,
+    # and increase a little bit for each STEP until the initially set relatively large learning rate is reached,
+    # and then use the initially set learning rate for training.
+    parser.add_argument('--warmup_steps', default=100, type=int)
 
     # Set args for Different Scheduler
     ## For StepLR
@@ -139,10 +154,14 @@ if __name__ == '__main__':
     parser.add_argument('--loss', choices=['mse', 'cross_entropy', 'triplet_margin_loss'],
                         default='cross_entropy', type=str)
 
-    parser.add_argument('--no_augment', action='store_true')
-    parser.add_argument('--log_dir', default='lightning_logs', type=str)
+    # we can use metric functions in TorchMetrics library. we can also  define our own evaluation metric by this libaray.
+    # It is friendly to Pytorch Lighting. You can add metric you need to choices and quickly select it.
+    parser.add_argument('--metric', choices=['accuracy', 'recall'],
+                        default='accuracy', type=str)
+    # when our task is multiclass (the --metric is accuracy), we should set how many class for metric in config_metric() function of  MInterface
+    parser.add_argument('--num_classes', default=10, type=int)
 
-    # Model Hyperparameters
+    # todo: Model Hyperparameters. You need to modify Hyperparameters for your model. Here, it is just an example.
     parser.add_argument('--hid', default=64, type=int)
     parser.add_argument('--block_num', default=8, type=int)
     parser.add_argument('--in_channel', default=3, type=int)
