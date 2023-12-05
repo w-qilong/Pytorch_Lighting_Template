@@ -7,7 +7,8 @@ PyTorch Lightning 是面向专业AI研究人员和机器学习工程师的深度
 - 使用模板的注意事项
 
 ## PyTorch Lightning 的两个核心概念
-### 1. [pytorch_lightning.LightningModule](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html)：该部分用于定义模型的训练、验证、测试步骤、optimizer、lr_scheduler。
+### 1. [pytorch_lightning.LightningModule](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html)：
+该部分用于定义模型的训练、验证、测试步骤、optimizer、lr_scheduler。
 
 Pytorch-Lighting的核心设计思想是“自给自足”。在定义自己的模型时，需要继承pytorch_lightning.LightningModule类，并在定义模型的过程中同时实现如何训练、如何测试、优化器定义等内容。
 具体的，这些内容通常由以下几个类函数实现：
@@ -36,28 +37,28 @@ Pytorch-Lighting的核心设计思想是“自给自足”。在定义自己的�
 ```
 root-
 	|-data
-		|-__init__.py
-		|-data_interface.py
-		|-xxxstandard_data1.py
-		|-xxxstandard_data2.py
-		|-...
+	    |-__init__.py
+	    |-data_interface.py
+	    |-xxxstandard_data1.py
+	    |-xxxstandard_data2.py
+	    |-...
 	|-example_Minist_data
+	|-Logs
 	|-model
-		|-__init__.py
-		|-model_interface.py
-		|-xxxstandard_net1.py
-		|-xxxstandard_net2.py
-		|-...
+	    |-__init__.py
+	    |-model_interface.py
+	    |-xxxstandard_net1.py
+	    |-xxxstandard_net2.py
+	    |-...
 	|-utils
-        |-__init__.py
-        |-xxxutils1.py
-        |-xxxutils2.py
-        |-...
-    |-Logs
+	    |-__init__.py
+	    |-xxxutils1.py
+	    |-xxxutils2.py
+	    |-...
 	|-main.py
 ```
 - 模板文件说明：其中[data](data)包用于为模型提供训练、验证和测试数据集。[model](model)包用提供自定义模型。[utils](utils)包用于提供模型评估指标、或常用函数等通用模块。[Logs](Logs)用于存储模型训练的日志。
-[main.py](main.py)用于模型训练所需的callback函数、实例化数据和模型接口，控制超参数。[example_Minist_data](example_Minist_data)example_Minist_data文件夹提供了MNIST手写数字识别数据集。
+[main.py](main.py)用于模型训练所需的callback函数、实例化数据和模型接口，控制超参数。[example_Minist_data](example_Minist_data)文件夹提供了示例MNIST手写数字识别数据集。
 同时，在[data](data)包下实现了其对应的训练、验证和测试Dataset，分别为[example_traindata.py](data%2Fexample_traindata.py)、
 [example_evaldata.py](data%2Fexample_evaldata.py)和[example_testdata.py](data%2Fexample_testdata.py)。在定义自己的数据集时，可参考它们进行实现。
 在model包下提供了自定义模型的基本格式文件[standard_net.py](model%2Fstandard_net.py)和一个用于MNIST手写数字识别的示例模型[example_net.py](model%2Fexample_net.py)。
@@ -98,7 +99,7 @@ root-
   - LearningRateMonitor： 当使用了lr_scheduler时，该回调函数用于监测学习率的变化情况。
 
 ## [TorchMetrics](https://lightning.ai/docs/torchmetrics/stable/pages/quickstart.html)
-TorchMetrics 最初是作为 PyTorch Lightning 的一部分而创建的，PyTorch Lightning 是一个强大的深度学习研究框架，旨在无需模板即可扩展模型。
+TorchMetrics 最初是作为 PyTorch Lightning 的一部分而创建的。
 TorchMetrics 是 100+ PyTorch 指标实现和易于使用的 API 的集合，用于创建自定义指标。
 虽然 TorchMetrics 是为与原生 PyTorch 一起使用而构建的，但将 TorchMetrics 与 Lightning 结合使用可提供额外的好处：
 - 模块化度量标准在 LightningModule 中正确定义后，会自动放置在正确的设备上。这意味着您的数据将始终与度量值放置在同一设备上。无需再调用!.to(device)
