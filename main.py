@@ -38,7 +38,7 @@ def load_callbacks():
         monitor='valid_acc_epoch/dataloader_idx_0',
         # todo: change the monitor metric for your dataset
         filename='best_{epoch}_acc_{valid_acc_epoch/dataloader_idx_0:.4f}',
-        save_top_k=1,
+        save_top_k=2,
         mode='max',
         save_last=True,
         save_weights_only=True

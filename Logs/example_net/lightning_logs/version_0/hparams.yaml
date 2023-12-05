@@ -1,0 +1,34 @@
+accelerator: gpu
+aug_prob: 0.5
+batch_size: 32
+block_num: 8
+devices:
+- 0
+epochs: 5
+eval_datasets:
+- example_evaldata
+- example_evaldata
+hid: 64
+in_channel: 3
+layer_num: 5
+loss: cross_entropy
+lr: 0.001
+lr_decay_rate: 0.5
+lr_scheduler: multi_step
+metric: accuracy
+milestones:
+- 5
+- 10
+- 20
+model_name: example_net
+momentum: 0.9
+num_classes: 10
+num_workers: 8
+optimizer: sgd
+seed: 1234
+test_datasets:
+- example_testdata
+train_dataset:
+- example_traindata
+warmup_steps: 100
+weight_decay: 1.0e-05
