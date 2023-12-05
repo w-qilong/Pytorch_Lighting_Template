@@ -2,6 +2,8 @@
 
 import torch
 from torch import nn
+
+
 # import timm # If we need to use pretrained model, we can use timm library to quickly create a model.
 
 
@@ -13,7 +15,7 @@ class StandardNet(nn.Module):
         also adapt it to other structures by changing the `torch.hub.load` content.
     """
 
-    def __init__(self, in_channel=1, out_channel=10, freeze=False, pretrained=False, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__()
         pass
 

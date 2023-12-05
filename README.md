@@ -5,6 +5,7 @@ PyTorch Lightning 是面向专业AI研究人员和机器学习工程师的深度
 - PyTorch Lightning的核心概念
 - 模板的文件说明
 - 使用模板的注意事项
+- 一个以MNIST手写体数字识别的例子，参考[PLighting.yaml](PLighting.yaml)提供的包版本配置环境，可直接运行main.py，生成结果。方便你理解和调试。
 
 ## PyTorch Lightning 的两个核心概念
 ### 1. [pytorch_lightning.LightningModule](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html)：
