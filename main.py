@@ -38,6 +38,7 @@ def load_callbacks():
         monitor='valid_acc_epoch/dataloader_idx_0',
         # todo: change the monitor metric for your dataset
         filename='best_{epoch}_acc_{valid_acc_epoch/dataloader_idx_0:.4f}',
+        auto_insert_metric_name=False,  # set do not insert name into checkpoints folder name
         save_top_k=2,
         mode='max',
         save_last=True,
