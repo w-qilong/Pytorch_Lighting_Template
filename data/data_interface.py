@@ -1,110 +1,96 @@
-import inspect
+"""数据模块统一入口。
+
+本文件只负责把用户在命令行中指定的数据集名称，转换为 Lightning 可用的
+DataLoader。新增数据集时，通常只需要在 data/ 下添加一个 Dataset 类文件。
+"""
+
 import importlib
-import pytorch_lightning as pl
+import inspect
+from collections.abc import Sequence
+
+import lightning as L
 from torch.utils.data import DataLoader
 
 
-# Here, we define the interface inherit from pl.LightningDataModule.
-# We can control the batch size, train/eval/test datasets used in our study by args from main.py,
-# because all args can be input to DInterface by **kwargs in __init__ function.
-class DInterface(pl.LightningDataModule):
-    def __init__(self, **kwargs):
+def _as_list(value: str | Sequence[str]) -> list[str]:
+    """把命令行传入的单个名称或多个名称统一成 list。"""
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+class DInterface(L.LightningDataModule):
+    """模板级 DataModule。
+
+    约定：数据集文件使用 snake_case 命名，类名使用 CamelCase。
+    例如 data/example_data.py 中应定义 ExampleData。
+    """
+
+    def __init__(
+        self,
+        train_dataset: str = "example_data",
+        val_datasets: str | Sequence[str] = ("example_data",),
+        test_datasets: str | Sequence[str] = ("example_data",),
+        batch_size: int = 32,
+        num_workers: int = 0,
+        **kwargs,
+    ) -> None:
         super().__init__()
-        self.num_workers = kwargs['num_workers']
-
-        # get train/eval/test dataset name list from kwargs
-        self.train_dataset = kwargs['train_dataset']
-        self.eval_dataset = kwargs['eval_datasets']
-        self.test_dataset = kwargs['test_datasets']
-
-        # get batch size from kwargs
-        self.batch_size = kwargs['batch_size']
+        self.train_dataset_name = train_dataset
+        self.val_dataset_names = _as_list(val_datasets)
+        self.test_dataset_names = _as_list(test_datasets)
+        self.batch_size = batch_size
+        self.num_workers = num_workers
         self.kwargs = kwargs
 
-    def load_data_module(self, dataset_name):
-        # Change the `snake_case.py` file name to `CamelCase` class name.
-        # Please always name your model file name as `snake_case.py` and
-        # class name corresponding `CamelCase`.
-        camel_name = ''.join([i.capitalize() for i in dataset_name.split('_')])
+    def _load_dataset_class(self, dataset_name: str):
+        class_name = "".join(part.capitalize() for part in dataset_name.split("_"))
         try:
-            data_module = getattr(importlib.import_module(
-                '.' + dataset_name, package=__package__), camel_name)
-            return data_module
-        except:
+            module = importlib.import_module(f".{dataset_name}", package=__package__)
+            return getattr(module, class_name)
+        except (ImportError, AttributeError) as exc:
             raise ValueError(
-                f'Invalid Dataset File Name or Invalid Class Name data.{dataset_name}.{camel_name}')
+                f"无法加载数据集 data/{dataset_name}.py 中的 {class_name} 类。"
+            ) from exc
 
-    def instancialize(self, data_module, **other_args):
-        """ Instancialize a data Class using the corresponding parameters
-            from self.hparams dictionary. You can also input any args
-            to overwrite the corresponding value in self.kwargs.
-        """
-        class_args = inspect.getargspec(data_module.__init__).args[1:]
-        inkeys = self.kwargs.keys()
-        args1 = {}
-        for arg in class_args:
-            if arg in inkeys:
-                args1[arg] = self.kwargs[arg]
-        args1.update(other_args)
-        return data_module(**args1)
+    def _instantiate_dataset(self, dataset_name: str):
+        """只把 Dataset 构造函数真正声明过的参数传进去，避免无关 CLI 参数污染。"""
+        dataset_cls = self._load_dataset_class(dataset_name)
+        signature = inspect.signature(dataset_cls.__init__)
+        accepted = {
+            name
+            for name, param in signature.parameters.items()
+            if name != "self" and param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY)
+        }
+        dataset_kwargs = {name: self.kwargs[name] for name in accepted if name in self.kwargs}
+        return dataset_cls(**dataset_kwargs)
 
-    def setup(self, stage=None):
-        # Assign train/val datasets for use in dataloaders
-        if stage == 'fit' or stage is None:
-            # init train dataset
-            self.train_set = []
-            for item in self.train_dataset:
-                self.train_set.append(self.instancialize(self.load_data_module(item)))
+    def setup(self, stage: str | None = None) -> None:
+        if stage in (None, "fit"):
+            self.train_set = self._instantiate_dataset(self.train_dataset_name)
+            self.val_sets = [self._instantiate_dataset(name) for name in self.val_dataset_names]
 
-            # init eval datasets
-            self.eval_set = []
-            for item in self.eval_dataset:
-                self.eval_set.append(self.instancialize(self.load_data_module(item)))
+        if stage in (None, "test", "predict"):
+            self.test_sets = [self._instantiate_dataset(name) for name in self.test_dataset_names]
 
-        # Assign test dataset for use in dataloader(s)
-        # you can put multiple dataset into a list and return list for test
-        if stage == 'test':
-            # init test datasets
-            self.test_set = []
-            for item in self.test_dataset:
-                self.test_set.append(self.instancialize(self.load_data_module(item)))
+    def _loader(self, dataset, shuffle: bool) -> DataLoader:
+        # persistent_workers 只能在 num_workers > 0 时启用。
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            persistent_workers=self.num_workers > 0,
+        )
 
-    def train_dataloader(self):
-        # if there is only one train dataset, return its DataLoader
-        if len(self.train_set) == 1:
-            return DataLoader(self.train_set[0], batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True,
-                              persistent_workers=True)
-        # if there are multiple train dataset, return a DataLoader list
-        else:
-            train_dataloaders = []
-            for dataset in self.train_set:
-                train_dataloaders.append(DataLoader(
-                    dataset=dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True))
-            return train_dataloaders
+    def train_dataloader(self) -> DataLoader:
+        return self._loader(self.train_set, shuffle=True)
 
-    def val_dataloader(self):
-        # if there is only one eval dataset, return its DataLoader
-        if len(self.eval_set) == 1:
-            return DataLoader(self.eval_set[0], batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False,
-                              persistent_workers=True)
-        # if there are multiple eval dataset, return a DataLoader list
-        else:
-            eval_dataloaders = []
-            for dataset in self.eval_set:
-                eval_dataloaders.append(DataLoader(
-                    dataset=dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False,
-                    persistent_workers=True))
-            return eval_dataloaders
+    def val_dataloader(self) -> list[DataLoader]:
+        return [self._loader(dataset, shuffle=False) for dataset in self.val_sets]
 
-    def test_dataloader(self):
-        # if there is only one test dataset, return its DataLoader
-        if len(self.test_set) == 1:
-            return DataLoader(self.test_set[0], batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False,
-                              persistent_workers=True)
-        # if there are multiple test dataset, return a DataLoader list
-        else:
-            test_dataloaders = []
-            for dataset in self.test_set:
-                test_dataloaders.append(DataLoader(
-                    dataset=dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False))
-            return test_dataloaders
+    def test_dataloader(self) -> list[DataLoader]:
+        return [self._loader(dataset, shuffle=False) for dataset in self.test_sets]
+
+    def predict_dataloader(self) -> list[DataLoader]:
+        return self.test_dataloader()
